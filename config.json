@@ -1,0 +1,59 @@
+{
+  "scraping": {
+    "urls": [
+      "https://trouverunlogement.lescrous.fr/tools/41/search?bounds=5.022368833018534_43.756102036804776_5.791411801768534_42.68938478968796"
+    ],
+    "delay_seconds": 60,
+    "timeout": 30,
+    "max_retries": 3
+  },
+  "notifications": {
+    "telegram": {
+      "bot_token": "7304184721:AAFdg9BLu8TYzijoLsQTwV6RD07-_udRgfY",
+      "chat_id": "5534146425",
+      "enabled": true,
+      "instructions": "To enable: 1) Create bot via @BotFather on Telegram, 2) Get bot token, 3) Get your chat ID by messaging @userinfobot"
+    },
+    "twilio": {
+      "account_sid": "YOUR_TWILIO_SID_HERE",
+      "auth_token": "YOUR_TWILIO_TOKEN_HERE",
+      "from_number": "+1234567890",
+      "to_number": "+0987654321",
+      "enabled": false,
+      "urgent_only": true,
+      "price_threshold": 300,
+      "instructions": "To enable: 1) Sign up at twilio.com, 2) Get Account SID and Auth Token, 3) Buy a phone number"
+    },
+    "email": {
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "username": "your_email@gmail.com",
+      "password": "your_app_password",
+      "to_email": "recipient@gmail.com",
+      "enabled": false,
+      "instructions": "To enable: 1) Enable 2FA on Gmail, 2) Generate App Password, 3) Use App Password (not regular password)"
+    }
+  },
+  "filters": {
+    "max_price": 800,
+    "preferred_types": ["Individuel", "Colocation", "Chambre"],
+    "excluded_residences": [],
+    "regions": {
+      "enabled": ["all"],
+      "disabled": []
+    },
+    "notify_on_disappearance": true,
+    "disappearance_grace_period_hours": 2
+  },
+  "monitoring": {
+    "check_interval_seconds": 30,
+    "peak_hours": {
+      "start": 8,
+      "end": 22,
+      "interval_minutes": 5
+    },
+    "off_hours": {
+      "interval_minutes": 15
+    }
+  }
+}

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  crous-monitor:
+    build: .
+    container_name: crous-marseille-monitor
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.json:/app/config.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Europe/Paris
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
