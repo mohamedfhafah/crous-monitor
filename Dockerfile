@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY *.py ./
-COPY config.json ./
+COPY config.example.json ./config.json
 
 # Create directory for database and logs
 RUN mkdir -p /app/data

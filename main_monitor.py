@@ -58,7 +58,7 @@ class CROUSMonitorMain:
                 logger.info(f"Configuration loaded from {config_file}")
         except FileNotFoundError:
             logger.error(f"Configuration file {config_file} not found!")
-            logger.info("Please ensure config.json exists in the current directory.")
+            logger.info("Copy config.example.json to config.json and fill in your settings.")
             sys.exit(1)
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in configuration file {config_file}: {e}")

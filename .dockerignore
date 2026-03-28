@@ -50,6 +50,15 @@ Thumbs.db
 # README.md (keep)
 # DEPLOYMENT_GUIDE.md (keep)
 
+# Environment variables (never copy secrets into the image)
+.env
+.env.local
+.env.*.local
+
+# Runtime configuration (credentials live in environment variables, not in the image)
+# The Dockerfile copies config.example.json (placeholder values only) as config.json.
+# Real credentials are injected at runtime via TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars.
+
 # Tests (optional)
 test_*.py
 *_test.py

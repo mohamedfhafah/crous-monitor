@@ -12,9 +12,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Europe/Paris
-      # Set Telegram credentials via environment variables (do NOT hardcode them here):
-      # - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      # - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     logging:
       driver: "json-file"
       options:
