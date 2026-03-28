@@ -47,6 +47,12 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Runtime configuration (copy config.example.json to config.json and fill in your values)
+config.json
+
+# Runtime data directory (created by Docker volumes)
+data/
+
 # Temporary files
 *.tmp
 *.temp
