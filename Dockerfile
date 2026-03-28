@@ -22,6 +22,9 @@ RUN mkdir -p /app/data
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
+# Telegram credentials — set these at runtime, not build time:
+# ENV TELEGRAM_BOT_TOKEN=your_token_here
+# ENV TELEGRAM_CHAT_ID=your_chat_id_here
 
 # Create non-root user
 RUN useradd -m -u 1000 monitor && chown -R monitor:monitor /app

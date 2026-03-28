@@ -4,6 +4,7 @@ Enhanced CROUS Scraper
 Specialized scraper for CROUS housing websites with improved parsing capabilities.
 """
 
+import hashlib
 import re
 import time
 import logging
@@ -314,8 +315,6 @@ class EnhancedCROUSScraper:
 
     def generate_listing_hash(self, residence_name: str, address: str, price: Optional[float]) -> str:
         """Generate a unique hash for listing deduplication."""
-        import hashlib
-
         content = f"{residence_name}|{address}|{price}"
         return hashlib.md5(content.encode('utf-8')).hexdigest()
 
