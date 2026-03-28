@@ -9,8 +9,8 @@
   },
   "notifications": {
     "telegram": {
-      "bot_token": "7304184721:AAFdg9BLu8TYzijoLsQTwV6RD07-_udRgfY",
-      "chat_id": "5534146425",
+      "bot_token": "YOUR_BOT_TOKEN_HERE",
+      "chat_id": "YOUR_CHAT_ID_HERE",
       "enabled": true,
       "instructions": "To enable: 1) Create bot via @BotFather on Telegram, 2) Get bot token, 3) Get your chat ID by messaging @userinfobot"
     },

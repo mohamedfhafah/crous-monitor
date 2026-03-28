@@ -7,15 +7,14 @@ Enhanced version with improved scraping and notification capabilities.
 import asyncio
 import json
 import logging
+import re
 import sqlite3
-import time
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Any
 import sys
 import os
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple, Any
 
 import requests
-import schedule
 from telegram import Bot
 import smtplib
 from email.mime.text import MIMEText
@@ -45,177 +44,183 @@ class CROUSMonitorMain:
         self.init_database()
 
     def load_config(self, config_file: str) -> Dict:
-        """Load configuration from JSON file."""
+        """Load configuration from JSON file with environment variable overrides."""
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
                 logger.info(f"Configuration loaded from {config_file}")
-                return config
         except FileNotFoundError:
             logger.error(f"Configuration file {config_file} not found!")
             logger.info("Please ensure config.json exists in the current directory.")
             sys.exit(1)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in configuration file {config_file}: {e}")
+            sys.exit(1)
+
+        # Allow environment variables to override Telegram credentials
+        telegram_cfg = config.setdefault('notifications', {}).setdefault('telegram', {})
+        if os.environ.get('TELEGRAM_BOT_TOKEN'):
+            telegram_cfg['bot_token'] = os.environ['TELEGRAM_BOT_TOKEN']
+        if os.environ.get('TELEGRAM_CHAT_ID'):
+            telegram_cfg['chat_id'] = os.environ['TELEGRAM_CHAT_ID']
+
+        return config
 
     def init_database(self):
         """Initialize SQLite database for storing housing listings."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS housing_listings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                residence_name TEXT NOT NULL,
-                address TEXT,
-                city TEXT,
-                region TEXT,
-                postal_code TEXT,
-                price REAL,
-                surface_area TEXT,
-                housing_type TEXT,
-                amenities TEXT,
-                description TEXT,
-                available_from DATE,
-                url TEXT,
-                listing_hash TEXT UNIQUE,
-                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_active BOOLEAN DEFAULT TRUE,
-                disappeared_at TIMESTAMP NULL,
-                crous_region TEXT
-            )
-        ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS housing_listings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    residence_name TEXT NOT NULL,
+                    address TEXT,
+                    city TEXT,
+                    region TEXT,
+                    postal_code TEXT,
+                    price REAL,
+                    surface_area TEXT,
+                    housing_type TEXT,
+                    amenities TEXT,
+                    description TEXT,
+                    available_from DATE,
+                    url TEXT,
+                    listing_hash TEXT UNIQUE,
+                    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    disappeared_at TIMESTAMP NULL,
+                    crous_region TEXT
+                )
+            ''')
 
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS notifications_sent (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                listing_id INTEGER,
-                notification_type TEXT,
-                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                success BOOLEAN,
-                error_message TEXT,
-                FOREIGN KEY (listing_id) REFERENCES housing_listings (id)
-            )
-        ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notifications_sent (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER,
+                    notification_type TEXT,
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    success BOOLEAN,
+                    error_message TEXT,
+                    FOREIGN KEY (listing_id) REFERENCES housing_listings (id)
+                )
+            ''')
 
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS monitoring_stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                url TEXT,
-                listings_found INTEGER,
-                new_listings INTEGER,
-                errors TEXT
-            )
-        ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS monitoring_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    url TEXT,
+                    listings_found INTEGER,
+                    new_listings INTEGER,
+                    errors TEXT
+                )
+            ''')
 
-        conn.commit()
-        conn.close()
+            conn.commit()
         logger.info("Database initialized successfully")
 
     def store_listings(self, listings: List[Dict], crous_region: str) -> Tuple[List[Dict], List[Dict]]:
         """Store listings in database and return new ones and disappeared ones."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        new_listings = []
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            new_listings = []
 
-        # Mark all listings from this region as potentially disappeared
-        cursor.execute(
-            "UPDATE housing_listings SET is_active = FALSE WHERE crous_region = ? AND is_active = TRUE",
-            (crous_region,)
-        )
-
-        for listing in listings:
-            try:
-                # Add region info to listing
-                listing['crous_region'] = crous_region
-
-                # Check if listing already exists
-                cursor.execute(
-                    "SELECT id, is_active FROM housing_listings WHERE listing_hash = ?",
-                    (listing['listing_hash'],)
-                )
-                existing = cursor.fetchone()
-
-                if not existing:
-                    # Insert new listing
-                    cursor.execute('''
-                        INSERT INTO housing_listings
-                        (residence_name, address, city, region, postal_code, price, surface_area, housing_type, amenities, description, available_from, url, listing_hash, crous_region)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        listing.get('residence_name'),
-                        listing.get('address'),
-                        listing.get('city'),
-                        listing.get('region'),
-                        listing.get('postal_code'),
-                        listing.get('price'),
-                        listing.get('surface_area'),
-                        listing.get('housing_type'),
-                        listing.get('amenities'),
-                        listing.get('description'),
-                        listing.get('available_from'),
-                        listing.get('url'),
-                        listing['listing_hash'],
-                        crous_region
-                    ))
-
-                    listing['id'] = cursor.lastrowid
-                    new_listings.append(listing)
-                    logger.info(f"🆕 New listing: {listing.get('residence_name')} - {listing.get('price', 'N/A')}€ - {crous_region}")
-                else:
-                    # Update last_seen timestamp and mark as active
-                    cursor.execute(
-                        "UPDATE housing_listings SET last_seen = CURRENT_TIMESTAMP, is_active = TRUE, disappeared_at = NULL WHERE id = ?",
-                        (existing[0],)
-                    )
-
-            except sqlite3.Error as e:
-                logger.error(f"Database error storing listing: {e}")
-                continue
-
-        # Find disappeared listings (those that were active but not seen this cycle)
-        grace_period_hours = self.config.get('filters', {}).get('disappearance_grace_period_hours', 2)
-        cursor.execute('''
-            SELECT id, residence_name, address, price, crous_region
-            FROM housing_listings
-            WHERE crous_region = ? AND is_active = FALSE AND disappeared_at IS NULL
-            AND datetime('now', '-{} hours') > last_seen
-        '''.format(grace_period_hours), (crous_region,))
-
-        disappeared_listings = []
-        for row in cursor.fetchall():
-            listing_id, residence_name, address, price, region = row
-            disappeared_listings.append({
-                'id': listing_id,
-                'residence_name': residence_name,
-                'address': address,
-                'price': price,
-                'crous_region': region
-            })
-
-            # Mark as disappeared
+            # Mark all listings from this region as potentially disappeared
             cursor.execute(
-                "UPDATE housing_listings SET disappeared_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (listing_id,)
+                "UPDATE housing_listings SET is_active = FALSE WHERE crous_region = ? AND is_active = TRUE",
+                (crous_region,)
             )
-            logger.info(f"🚫 Disappeared listing: {residence_name} - {price}€ - {region}")
 
-        conn.commit()
-        conn.close()
+            for listing in listings:
+                try:
+                    # Add region info to listing
+                    listing['crous_region'] = crous_region
+
+                    # Check if listing already exists
+                    cursor.execute(
+                        "SELECT id, is_active FROM housing_listings WHERE listing_hash = ?",
+                        (listing['listing_hash'],)
+                    )
+                    existing = cursor.fetchone()
+
+                    if not existing:
+                        # Insert new listing
+                        cursor.execute('''
+                            INSERT INTO housing_listings
+                            (residence_name, address, city, region, postal_code, price, surface_area, housing_type, amenities, description, available_from, url, listing_hash, crous_region)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            listing.get('residence_name'),
+                            listing.get('address'),
+                            listing.get('city'),
+                            listing.get('region'),
+                            listing.get('postal_code'),
+                            listing.get('price'),
+                            listing.get('surface_area'),
+                            listing.get('housing_type'),
+                            listing.get('amenities'),
+                            listing.get('description'),
+                            listing.get('available_from'),
+                            listing.get('url'),
+                            listing['listing_hash'],
+                            crous_region
+                        ))
+
+                        listing['id'] = cursor.lastrowid
+                        new_listings.append(listing)
+                        logger.info(f"🆕 New listing: {listing.get('residence_name')} - {listing.get('price', 'N/A')}€ - {crous_region}")
+                    else:
+                        # Update last_seen timestamp and mark as active
+                        cursor.execute(
+                            "UPDATE housing_listings SET last_seen = CURRENT_TIMESTAMP, is_active = TRUE, disappeared_at = NULL WHERE id = ?",
+                            (existing[0],)
+                        )
+
+                except sqlite3.Error as e:
+                    logger.error(f"Database error storing listing: {e}")
+                    continue
+
+            # Find disappeared listings (those that were active but not seen this cycle)
+            grace_period_hours = self.config.get('filters', {}).get('disappearance_grace_period_hours', 2)
+            cursor.execute('''
+                SELECT id, residence_name, address, price, crous_region
+                FROM housing_listings
+                WHERE crous_region = ? AND is_active = FALSE AND disappeared_at IS NULL
+                AND datetime('now', ?) > last_seen
+            ''', (crous_region, f'-{grace_period_hours} hours'))
+
+            disappeared_listings = []
+            for row in cursor.fetchall():
+                listing_id, residence_name, address, price, region = row
+                disappeared_listings.append({
+                    'id': listing_id,
+                    'residence_name': residence_name,
+                    'address': address,
+                    'price': price,
+                    'crous_region': region
+                })
+
+                # Mark as disappeared
+                cursor.execute(
+                    "UPDATE housing_listings SET disappeared_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (listing_id,)
+                )
+                logger.info(f"🚫 Disappeared listing: {residence_name} - {price}€ - {region}")
+
+            conn.commit()
         return new_listings, disappeared_listings
 
     def log_monitoring_stats(self, url: str, total_found: int, new_found: int, errors: str = None):
         """Log monitoring statistics to database."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            INSERT INTO monitoring_stats (url, listings_found, new_listings, errors)
-            VALUES (?, ?, ?, ?)
-        ''', (url, total_found, new_found, errors))
-
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO monitoring_stats (url, listings_found, new_listings, errors)
+                VALUES (?, ?, ?, ?)
+            ''', (url, total_found, new_found, errors))
+            conn.commit()
 
     async def send_telegram_notification(self, listing: Dict) -> bool:
         """Send Telegram notification for new listing."""
@@ -276,11 +281,45 @@ class CROUSMonitorMain:
         successful = sum(1 for _, success in notification_results if success)
         logger.info(f"📊 Notifications sent: {successful}/{len(notification_results)} successful")
 
+    async def send_disappearance_notification(self, listing: Dict) -> bool:
+        """Send Telegram notification when a listing disappears."""
+        try:
+            config = self.config['notifications']['telegram']
+            if not config['enabled']:
+                return False
+
+            bot = Bot(token=config['bot_token'])
+
+            price_str = f"{listing.get('price', 'N/A')}€/mois" if listing.get('price') else 'Prix non spécifié'
+
+            message = f"""
+🚫 **LOGEMENT CROUS DISPARU**
+
+🏢 **Résidence**: {listing.get('residence_name', 'N/A')}
+📍 **Adresse**: {listing.get('address', 'N/A')}
+💰 **Prix**: {price_str}
+
+⏰ Disparu à {datetime.now().strftime('%H:%M:%S')}
+"""
+
+            await bot.send_message(
+                chat_id=config['chat_id'],
+                text=message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+
+            logger.info(f"✅ Disappearance notification sent: {listing.get('residence_name')}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Disappearance notification failed: {e}")
+            return False
+
     def get_crous_region_from_url(self, url: str) -> str:
         """Extract CROUS region from URL."""
         try:
             # Extract region code from URL like https://trouverunlogement.lescrous.fr/tools/41/search
-            import re
             match = re.search(r'/tools/(\d+)/', url)
             if match:
                 region_code = match.group(1)
@@ -303,23 +342,20 @@ class CROUSMonitorMain:
                     '94': 'Outre-Mer'
                 }
                 return region_names.get(region_code, f'Région {region_code}')
-        except:
+        except Exception:
             pass
         return "Région inconnue"
 
     def log_notifications(self, listing_id: int, results: List[Tuple[str, bool]]):
         """Log notification results to database."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        for notification_type, success in results:
-            cursor.execute('''
-                INSERT INTO notifications_sent (listing_id, notification_type, success)
-                VALUES (?, ?, ?)
-            ''', (listing_id, notification_type, success))
-
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            for notification_type, success in results:
+                cursor.execute('''
+                    INSERT INTO notifications_sent (listing_id, notification_type, success)
+                    VALUES (?, ?, ?)
+                ''', (listing_id, notification_type, success))
+            conn.commit()
 
     async def run_monitoring_cycle(self):
         """Run a complete monitoring cycle."""
@@ -335,10 +371,7 @@ class CROUSMonitorMain:
                 logger.info(f"🌐 Checking: {url}")
 
                 # Use enhanced scraper
-                if 'crous-aix-marseille.fr' in url:
-                    listings = self.scraper.scrape_crous_aix_marseille(url)
-                else:
-                    listings = self.scraper.scrape_main_search_page(url)
+                listings = self.scraper.scrape_main_search_page(url)
 
                 # Filter listings according to criteria
                 filters = self.config.get('filters', {})
@@ -404,28 +437,21 @@ class CROUSMonitorMain:
         logger.info("🚀 Starting CROUS Marseille Housing Monitor")
         self.print_status()
 
-        # Schedule monitoring cycles
         interval = self.config.get('monitoring', {}).get('check_interval_seconds', 300)
-        schedule.every(interval).seconds.do(self._schedule_monitoring_cycle)
 
         logger.info(f"⏰ Monitor scheduled to run every {interval} seconds")
-        logger.info("📊 Hourly status reports will be sent to Telegram")
         logger.info("📱 Notifications will be sent for new Marseille listings")
         logger.info("🛑 Press Ctrl+C to stop the monitor")
 
         try:
             while True:
-                schedule.run_pending()
-                await asyncio.sleep(1)
+                await self.run_monitoring_cycle()
+                await asyncio.sleep(interval)
         except KeyboardInterrupt:
             logger.info("🛑 Monitor stopped by user")
             print("\n👋 CROUS Monitor stopped. Thanks for using the service!")
         except Exception as e:
             logger.error(f"💥 Unexpected error in monitoring loop: {e}")
-
-    def _schedule_monitoring_cycle(self):
-        """Schedule a monitoring cycle as an asyncio task."""
-        asyncio.create_task(self.run_monitoring_cycle())
 
     def print_status(self):
         """Print current monitoring status."""
@@ -450,35 +476,33 @@ class CROUSMonitorMain:
 
     def get_monitoring_stats(self) -> Dict:
         """Get monitoring statistics from database."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
 
-        # Total listings
-        cursor.execute("SELECT COUNT(*) FROM housing_listings")
-        total_listings = cursor.fetchone()[0]
+            # Total listings
+            cursor.execute("SELECT COUNT(*) FROM housing_listings")
+            total_listings = cursor.fetchone()[0]
 
-        # New listings today
-        cursor.execute("""
-            SELECT COUNT(*) FROM housing_listings
-            WHERE DATE(first_seen) = DATE('now')
-        """)
-        today_listings = cursor.fetchone()[0]
+            # New listings today
+            cursor.execute("""
+                SELECT COUNT(*) FROM housing_listings
+                WHERE DATE(first_seen) = DATE('now')
+            """)
+            today_listings = cursor.fetchone()[0]
 
-        # Successful notifications today
-        cursor.execute("""
-            SELECT COUNT(*) FROM notifications_sent
-            WHERE DATE(sent_at) = DATE('now') AND success = 1
-        """)
-        today_notifications = cursor.fetchone()[0]
+            # Successful notifications today
+            cursor.execute("""
+                SELECT COUNT(*) FROM notifications_sent
+                WHERE DATE(sent_at) = DATE('now') AND success = 1
+            """)
+            today_notifications = cursor.fetchone()[0]
 
-        # Recent monitoring cycles
-        cursor.execute("""
-            SELECT COUNT(*) FROM monitoring_stats
-            WHERE DATE(timestamp) = DATE('now')
-        """)
-        today_cycles = cursor.fetchone()[0]
-
-        conn.close()
+            # Recent monitoring cycles
+            cursor.execute("""
+                SELECT COUNT(*) FROM monitoring_stats
+                WHERE DATE(timestamp) = DATE('now')
+            """)
+            today_cycles = cursor.fetchone()[0]
 
         return {
             'total_listings': total_listings,
@@ -502,7 +526,6 @@ def main():
         monitor = CROUSMonitorMain()
 
         # Check if running in service mode (via launchd or command line argument)
-        import sys
         service_mode = '--service' in sys.argv or 'LAUNCHD' in str(sys.argv)
 
         # Log configuration for debugging
