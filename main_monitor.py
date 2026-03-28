@@ -5,6 +5,7 @@ Enhanced version with improved scraping and notification capabilities.
 """
 
 import asyncio
+import html
 import json
 import logging
 import re
@@ -33,6 +34,12 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+
+def _html_escape(value) -> str:
+    """HTML-escape a value for safe inclusion in Telegram HTML messages."""
+    return html.escape(str(value)) if value is not None else 'N/A'
+
 
 class CROUSMonitorMain:
     def __init__(self, config_file: str = 'config.json'):
@@ -231,29 +238,29 @@ class CROUSMonitorMain:
 
             bot = Bot(token=config['bot_token'])
 
-            # Format price
-            price_str = f"{listing.get('price', 'N/A')}€/mois" if listing.get('price') else 'Prix non spécifié'
+            # Format price using HTML-safe components
+            raw_price = listing.get('price')
+            price_str = (
+                f"{_html_escape(raw_price)}€/mois" if raw_price is not None else 'Prix non spécifié'
+            )
 
-            message = f"""
-🏠 **NOUVELLE CHAMBRE CROUS MARSEILLE!**
-
-🏢 **Résidence**: {listing.get('residence_name', 'N/A')}
-📍 **Adresse**: {listing.get('address', 'N/A')}
-💰 **Prix**: {price_str}
-📐 **Surface**: {listing.get('surface_area', 'N/A')}
-🛏️ **Type**: {listing.get('housing_type', 'N/A')}
-🔧 **Équipements**: {listing.get('amenities', 'N/A')}
-
-🔗 **Lien**: {listing.get('url', 'N/A')}
-
-⚡ Alerte envoyée à {datetime.now().strftime('%H:%M:%S')}
-🚨 **AGISSEZ RAPIDEMENT!**
-"""
+            message = (
+                "🏠 <b>NOUVELLE CHAMBRE CROUS MARSEILLE!</b>\n\n"
+                f"🏢 <b>Résidence</b>: {_html_escape(listing.get('residence_name'))}\n"
+                f"📍 <b>Adresse</b>: {_html_escape(listing.get('address'))}\n"
+                f"💰 <b>Prix</b>: {price_str}\n"
+                f"📐 <b>Surface</b>: {_html_escape(listing.get('surface_area'))}\n"
+                f"🛏️ <b>Type</b>: {_html_escape(listing.get('housing_type'))}\n"
+                f"🔧 <b>Équipements</b>: {_html_escape(listing.get('amenities'))}\n\n"
+                f"🔗 <b>Lien</b>: {_html_escape(listing.get('url'))}\n\n"
+                f"⚡ Alerte envoyée à {datetime.now().strftime('%H:%M:%S')}\n"
+                "🚨 <b>AGISSEZ RAPIDEMENT!</b>"
+            )
 
             await bot.send_message(
                 chat_id=config['chat_id'],
                 text=message,
-                parse_mode='Markdown',
+                parse_mode='HTML',
                 disable_web_page_preview=False
             )
 
@@ -290,22 +297,23 @@ class CROUSMonitorMain:
 
             bot = Bot(token=config['bot_token'])
 
-            price_str = f"{listing.get('price', 'N/A')}€/mois" if listing.get('price') else 'Prix non spécifié'
+            raw_price = listing.get('price')
+            price_str = (
+                f"{_html_escape(raw_price)}€/mois" if raw_price is not None else 'Prix non spécifié'
+            )
 
-            message = f"""
-🚫 **LOGEMENT CROUS DISPARU**
-
-🏢 **Résidence**: {listing.get('residence_name', 'N/A')}
-📍 **Adresse**: {listing.get('address', 'N/A')}
-💰 **Prix**: {price_str}
-
-⏰ Disparu à {datetime.now().strftime('%H:%M:%S')}
-"""
+            message = (
+                "🚫 <b>LOGEMENT CROUS DISPARU</b>\n\n"
+                f"🏢 <b>Résidence</b>: {_html_escape(listing.get('residence_name'))}\n"
+                f"📍 <b>Adresse</b>: {_html_escape(listing.get('address'))}\n"
+                f"💰 <b>Prix</b>: {price_str}\n\n"
+                f"⏰ Disparu à {datetime.now().strftime('%H:%M:%S')}"
+            )
 
             await bot.send_message(
                 chat_id=config['chat_id'],
                 text=message,
-                parse_mode='Markdown',
+                parse_mode='HTML',
                 disable_web_page_preview=True
             )
 
