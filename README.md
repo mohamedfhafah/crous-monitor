@@ -1,46 +1,68 @@
-# crous-monitor
-CROUS Marseille Housing Monitor - Real-time notifications for student housing
+# CROUS Marseille Housing Monitor
+
+Automation tool that monitors CROUS Marseille housing listings and sends notifications when student accommodation appears or disappears.
+
+## Highlights
+
+- Tracks listings over time with a local SQLite store
+- Sends Telegram alerts for new listings
+- Supports email notifications and Docker-based execution
+- Keeps runtime credentials outside git through ignored config files and environment-variable overrides
+
+## Stack
+
+- Python 3
+- Requests
+- python-telegram-bot
+- SQLite
+- Docker / Docker Compose
 
 ## Configuration
 
-`config.json` is **not tracked** by git (it is listed in `.gitignore`) so that real credentials are never accidentally committed.
-
-Start by copying the example file:
+`config.json` is intentionally ignored by git. Start from the example file:
 
 ```bash
 cp config.example.json config.json
 ```
 
-Then edit `config.json` with your settings. You can also override Telegram credentials with environment variables (see below) and leave the placeholders in `config.json`.
-
-### Telegram Credentials
-
-Set your Telegram bot token and chat ID via environment variables:
+Telegram credentials can also be injected with environment variables:
 
 ```bash
 export TELEGRAM_BOT_TOKEN=your_bot_token_here
 export TELEGRAM_CHAT_ID=your_chat_id_here
 ```
 
-These environment variables take precedence over the values in `config.json`. The `config.json` placeholders (`YOUR_BOT_TOKEN_HERE` / `YOUR_CHAT_ID_HERE`) are only used as fallback defaults.
+Environment variables override the values stored in `config.json`.
 
-## Running with Docker
+## Local run
 
-Create a `.env` file (already in `.gitignore`) with your credentials:
-
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 main_monitor.py
 ```
+
+## Docker
+
+Create a local `.env` file if you want Docker to inject credentials:
+
+```env
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 TELEGRAM_CHAT_ID=your_chat_id_here
 ```
 
-Then run:
+Then start the service:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-Alternatively, pass the variables inline:
+## Output
 
-```bash
-TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=yyy docker-compose up -d
-```
+- `crous_housing.db`: local listing history
+- `crous_monitor.log`: runtime logs
+
+## Purpose
+
+This repository is kept public as a practical automation project showing monitoring, notification workflows, and safe configuration handling.
