@@ -1,7 +1,7 @@
 {
   "scraping": {
     "urls": [
-      "https://trouverunlogement.lescrous.fr/tools/41/search?bounds=5.022368833018534_43.756102036804776_5.791411801768534_42.68938478968796"
+      "https://trouverunlogement.lescrous.fr/tools/42/search?bounds=5.022368833018534_43.756102036804776_5.791411801768534_42.68938478968796"
     ],
     "delay_seconds": 60,
     "timeout": 30,
@@ -11,7 +11,7 @@
     "telegram": {
       "bot_token": "YOUR_BOT_TOKEN_HERE",
       "chat_id": "YOUR_CHAT_ID_HERE",
-      "enabled": true,
+      "enabled": false,
       "instructions": "To enable: 1) Create bot via @BotFather on Telegram, 2) Get bot token, 3) Get your chat ID by messaging @userinfobot"
     },
     "twilio": {

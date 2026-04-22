@@ -5,6 +5,7 @@ Enhanced version with improved scraping and notification capabilities.
 """
 
 import asyncio
+import argparse
 import html
 import json
 import logging
@@ -16,10 +17,14 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 
 import requests
-from telegram import Bot
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+try:
+    from telegram import Bot
+except ImportError:  # pragma: no cover - depends on local env choice
+    Bot = None
 
 # Import our enhanced scraper
 from enhanced_scraper import EnhancedCROUSScraper
@@ -235,6 +240,9 @@ class CROUSMonitorMain:
             config = self.config['notifications']['telegram']
             if not config['enabled']:
                 return False
+            if Bot is None:
+                logger.warning("Telegram notifications enabled but python-telegram-bot is not installed")
+                return False
 
             bot = Bot(token=config['bot_token'])
 
@@ -294,6 +302,9 @@ class CROUSMonitorMain:
             config = self.config['notifications']['telegram']
             if not config['enabled']:
                 return False
+            if Bot is None:
+                logger.warning("Telegram notifications enabled but python-telegram-bot is not installed")
+                return False
 
             bot = Bot(token=config['bot_token'])
 
@@ -327,7 +338,7 @@ class CROUSMonitorMain:
     def get_crous_region_from_url(self, url: str) -> str:
         """Extract CROUS region from URL."""
         try:
-            # Extract region code from URL like https://trouverunlogement.lescrous.fr/tools/41/search
+            # Extract region code from URL like https://trouverunlogement.lescrous.fr/tools/42/search
             match = re.search(r'/tools/(\d+)/', url)
             if match:
                 region_code = match.group(1)
@@ -339,7 +350,8 @@ class CROUSMonitorMain:
                     '27': 'Bourgogne-Franche-Comté',
                     '28': 'Normandie',
                     '32': 'Hauts-de-France',
-                    '41': 'Provence-Alpes-Côte d\'Azur',
+                    '41': 'Provence-Alpes-Côte d\'Azur (legacy)',
+                    '42': 'Provence-Alpes-Côte d\'Azur',
                     '44': 'Bretagne',
                     '52': 'Pays de la Loire',
                     '53': 'Grand Est',
@@ -519,22 +531,49 @@ class CROUSMonitorMain:
             'today_cycles': today_cycles
         }
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run the CROUS Marseille monitor.")
+    parser.add_argument(
+        "--config",
+        default="config.json",
+        help="Path to the JSON configuration file.",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run a single monitoring cycle and exit.",
+    )
+    parser.add_argument(
+        "--service",
+        action="store_true",
+        help="Run continuously without interactive prompts.",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the interactive confirmation after the first cycle.",
+    )
+    return parser.parse_args()
+
+
 def main():
     """Main function to run the CROUS monitor."""
+    args = parse_args()
+
     print("🏠 CROUS Marseille Housing Monitor")
     print("=" * 40)
 
     # Check if config file exists
-    if not os.path.exists('config.json'):
-        print("❌ Configuration file 'config.json' not found!")
-        print("📝 Please create and configure config.json before running the monitor.")
+    if not os.path.exists(args.config):
+        print(f"❌ Configuration file '{args.config}' not found!")
+        print("📝 Please create and configure your config file before running the monitor.")
         return
 
     try:
-        monitor = CROUSMonitorMain()
+        monitor = CROUSMonitorMain(config_file=args.config)
 
         # Check if running in service mode (via launchd or command line argument)
-        service_mode = '--service' in sys.argv or 'LAUNCHD' in str(sys.argv)
+        service_mode = args.service or '--service' in sys.argv or 'LAUNCHD' in str(sys.argv)
 
         # Log configuration for debugging
         urls = monitor.config.get('scraping', {}).get('urls', [])
@@ -559,9 +598,16 @@ def main():
             else:
                 print("ℹ️  No new listings found in test cycle (this is normal)")
 
+            if args.once:
+                print("✅ One-shot monitoring cycle complete.")
+                return
+
             # Ask user if they want to start continuous monitoring
             print("\n" + "="*40)
-            response = input("🤖 Start continuous monitoring? (y/n): ").lower().strip()
+            if args.yes:
+                response = "y"
+            else:
+                response = input("🤖 Start continuous monitoring? (y/n): ").lower().strip()
 
             if response in ['y', 'yes', 'oui']:
                 asyncio.run(monitor.start_monitoring())

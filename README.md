@@ -40,8 +40,11 @@ Environment variables override the values stored in `config.json`.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python3 main_monitor.py
+cp config.example.json config.json
+python3 main_monitor.py --once --config config.json
 ```
+
+`config.example.json` ships with Telegram notifications disabled so the one-shot smoke test works before you add a bot token.
 
 ## Verification
 
