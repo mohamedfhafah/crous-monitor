@@ -43,6 +43,14 @@ pip install -r requirements.txt
 python3 main_monitor.py
 ```
 
+## Verification
+
+Run a syntax sanity check before pushing changes:
+
+```bash
+python3 -m py_compile main_monitor.py enhanced_scraper.py
+```
+
 ## Docker
 
 Create a local `.env` file if you want Docker to inject credentials:
